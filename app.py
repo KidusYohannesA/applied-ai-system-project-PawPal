@@ -1,11 +1,11 @@
-import streamlit as st
+import streamlit as st # type: ignore
 from datetime import datetime
 from pawpal_system import Task, Pet, Owner
 from pawpal_rag import suggest_task_defaults
 
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="centered")
 
-st.title("🐾 PawPal+")
+st.title("🐾 PawPal++")
 
 st.markdown(
     """

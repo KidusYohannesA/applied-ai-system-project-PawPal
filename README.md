@@ -1,68 +1,32 @@
-# PawPal+ (Module 2 Project)
+# PawPal++
 
 [![Tests](https://github.com/KidusYohannesA/applied-ai-system-project-PawPal/actions/workflows/test.yml/badge.svg)](https://github.com/KidusYohannesA/applied-ai-system-project-PawPal/actions/workflows/test.yml)
 
-You are building **PawPal+**, a Streamlit app that helps a pet owner plan care tasks for their pet.
+**PawPal++**, a Streamlit app that helps a pet owner plan care tasks for their pet.
 
-## Scenario
+## Base Project vs. My Additions
 
-A busy pet owner needs help staying consistent with pet care. They want an assistant that can:
+This repository started from the **PawPal+ Module 2 starter** — a Streamlit pet-care planner with a deterministic priority/duration scheduler, conflict detection, recurring-task generation, and 28 unit tests. The original scope is everything described in the [Scenario](#scenario), [Features](#features), and [Testing PawPal+](#testing-pawpal) sections below: a fully working but **fully manual** scheduling app where the owner types in every duration, priority, and frequency themselves.
 
-- Track pet care tasks (walks, feeding, meds, enrichment, grooming, etc.)
-- Consider constraints (time available, priority, owner preferences)
-- Produce a daily plan and explain why it chose that plan
+I extended it with a **RAG-augmented AI advisor** that meaningfully changes how task entry works.
 
-Your job is to design the system first (UML), then implement the logic in Python, then connect it to the Streamlit UI.
+| Layer | What was already there (base project) | What I added |
+|---|---|---|
+| **Data model** | `Owner`, `Pet`, `Task`, `Schedule` in [pawpal_system.py](pawpal_system.py) | Untouched — AI extension lives upstream |
+| **Scheduling logic** | Priority + duration sort, conflict detection, recurrence, daily view | Untouched — all 28 original tests still pass |
+| **Streamlit UI** | Add Pet / Add Task / Generate Schedule sections | Added breed + age inputs, **✨ AI suggest defaults** button, citations expander |
+| **Knowledge base** | (none) | 17 curated markdown docs in [data/knowledge/](data/knowledge/) covering dogs, cats, age stages, medications, vet visits |
+| **Retrieval** | (none) | ChromaDB persistent store (82 chunks) with `sentence-transformers/all-MiniLM-L6-v2` local embeddings, species-filtered top-k retrieval — see [pawpal_rag/](pawpal_rag/) |
+| **LLM integration** | (none) | Anthropic `claude-haiku-4-5` advisor with strict tool-use schema, prompt caching on the system prompt, structured logging, graceful fallback when API key is missing |
+| **Reliability / eval** | (none) | LLM-as-judge using `claude-sonnet-4-6` (see [pawpal_rag/judge.py](pawpal_rag/judge.py)), programmatic citation-grounding check, 8-case golden dataset in [tests/test_rag_quality.py](tests/test_rag_quality.py) |
+| **Tests** | 28 deterministic unit tests | +11 RAG tests (mocked + 1 integration smoke) +9 LLM-as-judge eval cases = **48 total** |
+| **CI** | (none) | GitHub Actions on Python 3.12 with pip caching — see [.github/workflows/test.yml](.github/workflows/test.yml) |
 
-## Features
+### Where the AI is integrated
 
-- **Priority-based scheduling** — Tasks are sorted by priority (high > medium > low), with shorter tasks scheduled first at the same level, then assigned back-to-back starting at a configurable hour
-- **Chronological sorting** — `get_tasks_by_time()` sorts tasks by start time using `datetime.max` as a sentinel so unscheduled tasks always appear last
-- **Conflict detection** — `detect_conflicts()` runs a sweep-line pass over sorted tasks, flagging any pair where the next task starts before the current one ends
-- **Recurring task generation** — `mark_complete()` uses a frequency-to-timedelta lookup (`daily` = 1 day, `weekly` = 7 days, `monthly` = 30 days) to auto-create the next occurrence on the same pet
-- **Daily view filtering** — `get_daily_view()` filters all tasks down to a single date, comparing the date component of each task's `datetime` start time
-- **Computed end times** — End times are calculated on the fly via `get_end_time()` (`start_time + duration`), avoiding stored state that can drift out of sync
-- **Cross-pet task aggregation** — Schedule dynamically collects tasks from all pets through `_all_tasks()`, so adding or removing a pet's task is immediately reflected everywhere
-- **Schedule explanation** — `get_explanation()` produces a numbered, human-readable summary of each task with pet name, time window, priority, and frequency
+The AI advisor is wired directly into the **Add Task** flow ([app.py](app.py)) — when the owner clicks the suggest button, retrieved corpus chunks are sent to Claude, the validated suggestion **pre-fills the duration / priority / frequency widgets**, and the citations + rationale render in an expander. The owner can still edit and save. The deterministic `Schedule.schedule_tasks()` then operates on the AI-influenced `Task` objects exactly as it did before — no parallel "AI track" or print-the-data-alongside-a-standard-answer split.
 
-## What you will build
-
-Your final app should:
-
-- Let a user enter basic owner + pet info
-- Let a user add/edit tasks (duration + priority at minimum)
-- Generate a daily schedule/plan based on constraints and priorities
-- Display the plan clearly (and ideally explain the reasoning)
-- Include tests for the most important scheduling behaviors
-
-## Smarter Scheduling
-
-The scheduler has been enhanced with several algorithmic improvements:
-
-- **Priority + duration sorting** — Tasks are scheduled by priority (high first), with shorter tasks before longer ones at the same level. Quick critical tasks like medication won't get stuck behind a long walk.
-- **Completed task filtering** — Finished tasks are automatically excluded from scheduling so they don't waste time slots.
-- **Datetime-based time handling** — Times are stored as `datetime` objects internally instead of strings, eliminating repeated parsing and enabling safe date comparisons.
-- **Chronological ordering** — `get_tasks_by_time()` returns tasks sorted by start time for display, with unscheduled tasks placed at the end.
-- **Recurring task auto-creation** — When a daily, weekly, or monthly task is marked complete, a new pending task is automatically created with its start time advanced to the next occurrence.
-- **Conflict detection** — `detect_conflicts()` uses a sweep-line algorithm to find overlapping task windows across all pets and returns warning messages for each conflict.
-
-## Testing PawPal+
-
-```bash
-python -m pytest tests/test_pawpal.py -v
-```
-
-The test suite (28 tests) covers the following areas:
-
-- **Sorting correctness** — tasks are returned in chronological order by start time, and `schedule_tasks()` sorts by priority then duration
-- **Recurrence logic** — completing a daily, weekly, or monthly task creates a new pending task advanced to the next occurrence, including chained completions
-- **Conflict detection** — overlapping time windows are flagged across different pets and on the same pet, with boundary precision (off-by-one minute)
-- **Edge cases** — zero-duration tasks, recurring tasks with no start time or no pet, midnight boundaries in daily view, duplicate pet names in the registry, and silent no-ops for orphan tasks
-
-**Confidence Level: 4/5 stars**
-The core scheduling, recurrence, and conflict logic is well-covered. One star is withheld because input validation (malformed time strings, invalid priority values) is not enforced by the system and therefore not tested defensively.
-
-## Getting started
+See [assets/system-architecture.md](assets/system-architecture.md) for the full data-flow diagram and the four AI-output checkpoints (schema gate, programmatic grounding, LLM-as-judge, human review).
 
 ### Setup
 
@@ -70,6 +34,14 @@ The core scheduling, recurrence, and conflict logic is well-covered. One star is
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+
+# 1. After pip install -r requirements.txt, create a .env file with your
+#    Anthropic API key (.env is gitignored — never commit it).
+echo "ANTHROPIC_API_KEY=sk-ant-..." > .env
+# Then edit .env and replace sk-ant-... with your real key from
+# console.anthropic.com
+
+python scripts/build_index.py
 ```
 
 ### Run the app
@@ -78,15 +50,7 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-### Suggested workflow
 
-1. Read the scenario carefully and identify requirements and edge cases.
-2. Draft a UML diagram (classes, attributes, methods, relationships).
-3. Convert UML into Python class stubs (no logic yet).
-4. Implement scheduling logic in small increments.
-5. Add tests to verify key behaviors.
-6. Connect your logic to the Streamlit UI in `app.py`.
-7. Refine UML so it matches what you actually built.
 
 ## AI Extension — RAG-Augmented Task Suggestions
 
@@ -105,20 +69,6 @@ When you click **✨ AI suggest defaults** in the Add Task section, the system:
 3. Receives a typed suggestion with `duration_minutes`, `priority`, `frequency`, a rationale, and source citations
 4. Pre-fills the form fields — you can still edit before saving
 
-### Setup (one extra step beyond the base app)
-
-```bash
-# 1. After pip install -r requirements.txt, create a .env file with your
-#    Anthropic API key (.env is gitignored — never commit it).
-echo "ANTHROPIC_API_KEY=sk-ant-..." > .env
-# Then edit .env and replace sk-ant-... with your real key from
-# console.anthropic.com
-
-# 2. (Optional) Build the vector store explicitly. If skipped, it builds
-#    automatically on first AI suggestion.
-python scripts/build_index.py
-```
-
 ### Reliability and error handling
 
 The advisor degrades gracefully — it never crashes the app. If anything fails (missing API key, network error, malformed response), `suggest_task_defaults()` returns `None` and the UI shows a warning while the form stays usable.
@@ -136,19 +86,19 @@ Logged events include:
 - Schema validation failures (which field, what value)
 - Token usage per call (input, output, cache reads/writes)
 
-### Project layout (AI extension)
+### Project layout
 
 ```
-data/knowledge/           # 17 curated markdown docs (dogs, cats, general)
-data/chroma/              # vector store (auto-built; gitignored)
+data/knowledge/           
+data/chroma/              
 pawpal_rag/
-├── corpus.py             # markdown loader + heading-aware chunker
-├── store.py              # ChromaDB persistent store (lazy chromadb import)
-├── retriever.py          # retrieve(query, k, where)
-├── prompts.py            # system prompt + suggest_defaults tool schema
-└── advisor.py            # suggest_task_defaults() — Anthropic call + validation
+├── corpus.py            
+├── store.py            
+├── retriever.py         
+├── prompts.py            
+└── advisor.py           
 scripts/build_index.py    # one-shot indexer
-tests/test_rag.py         # 11 tests (chunker, mocked advisor, integration smoke)
+tests/test_rag.py        
 ```
 
 ### Testing the AI extension
@@ -164,8 +114,5 @@ python -m pytest tests/test_rag.py -v -m integration
 python -m pytest tests/ -v
 ```
 
-## 📸 Demo
-Screenshot of App:
-
-![PawPal+ Demo](../streamlitdemo.png)
-
+# Demo Image: 
+![Demo Image](applied-ai-system-project-PawPal/assets/DemoImage.png)

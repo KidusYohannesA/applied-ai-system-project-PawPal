@@ -13,7 +13,7 @@ import logging
 import os
 from dataclasses import dataclass, field
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv # type: ignore
 
 load_dotenv()
 
@@ -166,7 +166,7 @@ def _get_client():
         logger.info("ANTHROPIC_API_KEY not set — judge unavailable")
         return None
     try:
-        import anthropic
+        import anthropic # type: ignore
     except ImportError:
         logger.warning("anthropic package not installed")
         return None
