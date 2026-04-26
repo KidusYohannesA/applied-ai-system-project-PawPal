@@ -1,0 +1,41 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Show installed versions
+        run: pip list
+
+      - name: Run unit + mocked tests
+        run: python -m pytest tests/ -v --tb=short
+
+      - name: Show test summary
+        if: always()
+        run: |
+          echo "Test run finished. Integration tests are skipped on CI"
+          echo "(they require ANTHROPIC_API_KEY)."

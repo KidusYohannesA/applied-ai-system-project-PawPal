@@ -1,5 +1,7 @@
 # PawPal+ (Module 2 Project)
 
+[![Tests](https://github.com/KidusYohannesA/applied-ai-system-project-PawPal/actions/workflows/test.yml/badge.svg)](https://github.com/KidusYohannesA/applied-ai-system-project-PawPal/actions/workflows/test.yml)
+
 You are building **PawPal+**, a Streamlit app that helps a pet owner plan care tasks for their pet.
 
 ## Scenario
@@ -70,6 +72,12 @@ source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+### Run the app
+
+```bash
+streamlit run app.py
+```
+
 ### Suggested workflow
 
 1. Read the scenario carefully and identify requirements and edge cases.
@@ -79,6 +87,82 @@ pip install -r requirements.txt
 5. Add tests to verify key behaviors.
 6. Connect your logic to the Streamlit UI in `app.py`.
 7. Refine UML so it matches what you actually built.
+
+## AI Extension — RAG-Augmented Task Suggestions
+
+PawPal+ ships with an AI advisor that suggests evidence-based defaults (duration, priority, frequency) when you add a new task. The advisor uses **Retrieval-Augmented Generation (RAG)** over a curated corpus of pet-care guidance and calls the Anthropic API (`claude-haiku-4-5`) with strict tool-use JSON schemas.
+
+### System diagram
+
+See [assets/system-architecture.md](assets/system-architecture.md) for the full Mermaid data-flow diagram, component legend, and the four checkpoints (schema gate · logging · human review · test suite) that verify AI output before it reaches the schedule.
+
+### What it does
+
+When you click **✨ AI suggest defaults** in the Add Task section, the system:
+
+1. Retrieves the top 5 most relevant chunks from `data/knowledge/` (filtered by species)
+2. Sends them to Claude along with the pet's species/breed/age and the task title
+3. Receives a typed suggestion with `duration_minutes`, `priority`, `frequency`, a rationale, and source citations
+4. Pre-fills the form fields — you can still edit before saving
+
+### Setup (one extra step beyond the base app)
+
+```bash
+# 1. After pip install -r requirements.txt, create a .env file with your
+#    Anthropic API key (.env is gitignored — never commit it).
+echo "ANTHROPIC_API_KEY=sk-ant-..." > .env
+# Then edit .env and replace sk-ant-... with your real key from
+# console.anthropic.com
+
+# 2. (Optional) Build the vector store explicitly. If skipped, it builds
+#    automatically on first AI suggestion.
+python scripts/build_index.py
+```
+
+### Reliability and error handling
+
+The advisor degrades gracefully — it never crashes the app. If anything fails (missing API key, network error, malformed response), `suggest_task_defaults()` returns `None` and the UI shows a warning while the form stays usable.
+
+All failure paths are logged to the `pawpal_rag.advisor` logger. To see what went wrong:
+
+```python
+import logging
+logging.basicConfig(level=logging.INFO)
+```
+
+Logged events include:
+- Retrieval results (chunk count, query)
+- Anthropic API errors (full traceback via `logger.exception`)
+- Schema validation failures (which field, what value)
+- Token usage per call (input, output, cache reads/writes)
+
+### Project layout (AI extension)
+
+```
+data/knowledge/           # 17 curated markdown docs (dogs, cats, general)
+data/chroma/              # vector store (auto-built; gitignored)
+pawpal_rag/
+├── corpus.py             # markdown loader + heading-aware chunker
+├── store.py              # ChromaDB persistent store (lazy chromadb import)
+├── retriever.py          # retrieve(query, k, where)
+├── prompts.py            # system prompt + suggest_defaults tool schema
+└── advisor.py            # suggest_task_defaults() — Anthropic call + validation
+scripts/build_index.py    # one-shot indexer
+tests/test_rag.py         # 11 tests (chunker, mocked advisor, integration smoke)
+```
+
+### Testing the AI extension
+
+```bash
+# Unit + mocked tests (no API key needed)
+python -m pytest tests/test_rag.py -v
+
+# Real-API smoke test (requires ANTHROPIC_API_KEY)
+python -m pytest tests/test_rag.py -v -m integration
+
+# Full suite — verifies the original 28 tests still pass
+python -m pytest tests/ -v
+```
 
 ## 📸 Demo
 Screenshot of App:
